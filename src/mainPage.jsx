@@ -197,7 +197,40 @@ const MainPage = () => {
             throw error;
         }
     };
-    
+
+    /**
+     * Processes an audio file and generates a response.
+     * @param {string} sessionId - ID of the current session.
+     * @param {File} audioFile - Audio file to process.
+     * @returns {Promise<object>} - Response from the audio processing API.
+     */
+    const processAudioFile = async (sessionId, audioFile) => {
+        try {
+            console.log(`Processing audio file: ${audioFile.name} for session: ${sessionId}`);
+            
+            // Convert the audio file to base64
+            const toBase64 = (file) => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result.split(',')[1]); // Extract base64 string
+                reader.onerror = (error) => reject(error);
+            });
+            
+            const audioBase64 = await toBase64(audioFile);
+            
+            // Prepare payload
+            const payload = {
+                session_id: sessionId,
+                audio_data: audioBase64,
+            };
+            
+            // Use the makeApiRequest helper function for consistency
+            return await makeApiRequest('/GenerateAudioResponse', 'POST', payload);
+        } catch (error) {
+            console.error("Error processing audio:", error);
+            throw error;
+        }
+    };
 
     // =========== UI Event Handlers ===========
     
@@ -245,7 +278,8 @@ const MainPage = () => {
                         sessionId={activeSession}
                         messages={sessionData[activeSession]?.messages || []}
                         onMessagesUpdate={(messages) => updateSessionMessages(activeSession, messages)}
-                        generateResponse={generateResponse}  // Pass the generateResponse function to ChatWindow
+                        generateResponse={generateResponse}
+                        processAudioFile={processAudioFile} // Pass the new audio processing function
                         makeApiRequest={makeApiRequest}
                     />
                 ) : (
