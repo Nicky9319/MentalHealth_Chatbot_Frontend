@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, makeApiRequest }) => {
+const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, makeApiRequest, generateResponse }) => {
   const [messages, setMessages] = useState(initialMessages || []);
   const [inputText, setInputText] = useState('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
@@ -11,22 +11,7 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
     setMessages(initialMessages || []);
   }, [initialMessages, sessionId]);
 
-  // Send initial greeting when a new session is created with no messages
-  useEffect(() => {
-    if (sessionId && messages.length === 0) {
-      // Add AI greeting
-      const greeting = { text: "Hello! How can I help you today?", isUser: false };
-      setMessages([greeting]);
-      onMessagesUpdate([greeting]);
-      
-      // Send initial greeting to the API
-      makeApiRequest('/api/messages', 'POST', {
-        "SESSION_ID": sessionId,
-        "message": greeting.text,
-        "isUser": greeting.isUser
-      });
-    }
-  }, [sessionId, messages.length, onMessagesUpdate, makeApiRequest]);
+  // Remove the useEffect that was adding an initial greeting
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,62 +22,56 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     onMessagesUpdate(updatedMessages);
+    
+    const userMessageText = inputText;
     setInputText('');
     
     // Set waiting state to true
     setIsWaitingForResponse(true);
 
     try {
-      // Send user message to API
-      await makeApiRequest('/api/messages', 'POST', {
-        "SESSION_ID": sessionId,
-        "message": inputText,
-        "isUser": true
-      });
-
-      // Request AI response
-      const aiResponseRequest = {
-        "SESSION_ID": sessionId
-      };
+      // Generate AI response using the passed in generateResponse function
+      const response = await generateResponse(sessionId, userMessageText);
       
-      console.log("Requesting AI response with:", aiResponseRequest);
-      
-      // Simulate response - replace with actual API call
-      setTimeout(() => {
-        const aiResponse = { 
-          text: "This is a simulated response. In a real application, this would come from your backend server.", 
-          isUser: false 
-        };
-        const newMessages = [...updatedMessages, aiResponse];
-        setMessages(newMessages);
-        onMessagesUpdate(newMessages);
-        
-        // Set waiting state back to false
-        setIsWaitingForResponse(false);
-        
-        // Log the response for debugging
-        console.log("Received AI response:", aiResponse);
-      }, 1000);
-      
-      /* 
-      // Actual API call would look like:
-      const response = await makeApiRequest('/api/generate', 'POST', aiResponseRequest);
-      
-      if (response && response.text) {
-        const aiResponse = { 
-          text: response.text, 
-          isUser: false 
-        };
-        const newMessages = [...updatedMessages, aiResponse];
-        setMessages(newMessages);
-        onMessagesUpdate(newMessages);
+      if (response) {
+        if (response.messages) {
+          // New format: Find the AI's response (should be the last message with type='ai')
+          const aiMessageObj = response.messages.find(msg => msg.type === 'ai');
+          
+          if (aiMessageObj) {
+            const aiResponse = { 
+              text: aiMessageObj.content, 
+              isUser: false 
+            };
+            const newMessages = [...updatedMessages, aiResponse];
+            setMessages(newMessages);
+            onMessagesUpdate(newMessages);
+          }
+        } else if (response.response) {
+          // Fallback for old format where response is directly in response.response
+          const aiResponse = { 
+            text: response.response, 
+            isUser: false 
+          };
+          const newMessages = [...updatedMessages, aiResponse];
+          setMessages(newMessages);
+          onMessagesUpdate(newMessages);
+        }
       }
       
       setIsWaitingForResponse(false);
-      */
     } catch (error) {
       console.error("Error in chat exchange:", error);
       setIsWaitingForResponse(false);
+      
+      // Add error message
+      const errorMessage = { 
+        text: "Sorry, there was an error processing your request. Please try again.", 
+        isUser: false 
+      };
+      const newMessages = [...updatedMessages, errorMessage];
+      setMessages(newMessages);
+      onMessagesUpdate(newMessages);
     }
   };
 
