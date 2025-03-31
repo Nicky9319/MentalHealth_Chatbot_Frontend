@@ -5,15 +5,38 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
   const [inputText, setInputText] = useState('');
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [audioFile, setAudioFile] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState(null);
+  const [audioChunks, setAudioChunks] = useState([]);
+  
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const timerRef = useRef(null);
 
   // Update local messages when session changes
   useEffect(() => {
     setMessages(initialMessages || []);
   }, [initialMessages, sessionId]);
 
-  // Remove the useEffect that was adding an initial greeting
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  
+  // Timer for recording duration
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+      setRecordingTime(0);
+    }
+    
+    return () => clearInterval(timerRef.current);
+  }, [isRecording]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -194,11 +217,70 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
     }
     // If Shift+Enter is pressed, let the default behavior (new line) happen
   };
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  
+  // Start recording function
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+      
+      recorder.onstop = async () => {
+        // Stop all audio tracks to release the microphone
+        stream.getTracks().forEach(track => track.stop());
+        
+        if (chunks.length > 0) {
+          // Convert audio chunks to a blob
+          const audioBlob = new Blob(chunks, { type: 'audio/wav' });
+          // Convert to File object with a name
+          const fileName = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.wav`;
+          const audioFile = new File([audioBlob], fileName, { type: 'audio/wav' });
+          setAudioFile(audioFile);
+        }
+      };
+      
+      // Start recording
+      recorder.start();
+      setMediaRecorder(recorder);
+      setAudioChunks([]);
+      setIsRecording(true);
+      
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      alert("Could not access microphone. Please check permissions.");
+    }
+  };
+  
+  // Stop recording function
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setIsRecording(false);
+    }
+  };
+  
+  // Cancel recording function
+  const cancelRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      setIsRecording(false);
+      // Clear audio chunks so no file is created
+      setAudioChunks([]);
+    }
+  };
+  
+  // Format recording time as MM:SS
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
 
   return (
     <div className="flex flex-col h-full bg-gray-50 rounded-lg overflow-hidden shadow-lg">
@@ -266,9 +348,9 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
           <button
             type="button"
             onClick={handleUploadClick}
-            disabled={isWaitingForResponse || audioFile !== null}
-            className={`px-3 py-2 rounded-l-lg transition-colors ${
-              isWaitingForResponse || audioFile !== null
+            disabled={isWaitingForResponse || audioFile !== null || isRecording}
+            className={`px-3 py-2 transition-colors ${
+              isWaitingForResponse || audioFile !== null || isRecording
                 ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
                 : 'bg-indigo-600 text-white hover:bg-indigo-700'
             }`}
@@ -277,6 +359,32 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
               <path d="M12 2a1 1 0 011 1v3a1 1 0 11-2 0V3a1 1 0 011-1zm0 16a1 1 0 011 1v3a1 1 0 11-2 0v-3a1 1 0 011-1zm10-8a1 1 0 01-1 1h-3a1 1 0 110-2h3a1 1 0 011 1zM6 10a1 1 0 01-1 1H2a1 1 0 110-2h3a1 1 0 011 1zm14.95 4.536l-2.12-2.122a1 1 0 00-1.414 1.414l2.12 2.122a1 1 0 001.414-1.414zm-14.486.024l-2.122 2.12a1 1 0 001.414 1.415l2.122-2.12a1 1 0 00-1.414-1.415zM6.464 5.464L4.344 3.344a1 1 0 00-1.414 1.414l2.12 2.12a1 1 0 101.414-1.414zm14.5.042l-2.121-2.12a1 1 0 10-1.415 1.413l2.121 2.12a1 1 0 001.415-1.413z" />
             </svg>
+          </button>
+          
+          {/* Voice Recording Button */}
+          <button
+            type="button"
+            onClick={isRecording ? stopRecording : startRecording}
+            disabled={isWaitingForResponse || audioFile !== null}
+            className={`px-3 py-2 flex items-center justify-center transition-colors ${
+              isRecording 
+                ? 'bg-red-600 text-white'
+                : isWaitingForResponse || audioFile !== null
+                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+            title={isRecording ? "Stop recording" : "Record audio"}
+          >
+            {isRecording ? (
+              <div className="flex items-center">
+                <span className="mr-1 animate-pulse rounded-full h-2 w-2 bg-red-300"></span>
+                <span className="text-xs">{formatTime(recordingTime)}</span>
+              </div>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                <path d="M12 2a4 4 0 014 4v4a4 4 0 11-8 0V6a4 4 0 014-4zm0 14c3.31 0 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8h2c0 3.31 2.69 6 6 6zm-6 2h12v2H6v-2z" />
+              </svg>
+            )}
           </button>
           
           {/* Display selected file or text input */}
@@ -305,27 +413,53 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isWaitingForResponse ? "Waiting for response..." : "Type your message here... (Shift+Enter for new line)"}
-              className={`flex-1 rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[40px] max-h-[120px] resize-y ${
-                isWaitingForResponse ? 'bg-gray-200 text-gray-500' : 'bg-gray-100'
-              } ${audioFile ? 'rounded-l-none' : ''}`}
+              placeholder={
+                isRecording 
+                  ? "Recording... Press the microphone button to stop."
+                  : isWaitingForResponse 
+                    ? "Waiting for response..." 
+                    : "Type your message here... (Shift+Enter for new line)"
+              }
+              className={`flex-1 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 min-h-[40px] max-h-[120px] resize-y ${
+                isRecording 
+                  ? 'bg-red-50 text-gray-500'
+                  : isWaitingForResponse 
+                    ? 'bg-gray-200 text-gray-500' 
+                    : 'bg-gray-100'
+              }`}
               rows={1}
-              disabled={isWaitingForResponse}
+              disabled={isWaitingForResponse || isRecording}
             />
           )}
           
           <button 
             type="submit"
             className={`text-white px-4 py-2 rounded-r-lg transition-colors ${
-              isWaitingForResponse ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+              isWaitingForResponse || isRecording 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-indigo-600 hover:bg-indigo-700'
             }`}
-            disabled={isWaitingForResponse || (audioFile === null && inputText.trim() === '')}
+            disabled={isWaitingForResponse || isRecording || (audioFile === null && inputText.trim() === '')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
               <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
             </svg>
           </button>
         </div>
+        
+        {/* Recording indicator */}
+        {isRecording && (
+          <div className="mt-2 text-xs text-red-600 flex items-center">
+            <span className="animate-pulse mr-1">●</span>
+            Recording in progress... {formatTime(recordingTime)}
+            <button 
+              onClick={cancelRecording}
+              className="ml-auto text-red-600 hover:text-red-800 text-sm underline"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );
