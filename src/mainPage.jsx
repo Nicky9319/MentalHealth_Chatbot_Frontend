@@ -60,6 +60,7 @@ const MainPage = () => {
             }
             
             const responseData = await response.json();
+            console.log(responseData)
             return responseData;
         } catch (error) {
             console.error(`Error making ${method} request to ${url}:`, error);
@@ -224,8 +225,10 @@ const MainPage = () => {
                 audio_data: audioBase64,
             };
             
-            // Use the makeApiRequest helper function for consistency
-            return await makeApiRequest('/GenerateAudioResponse', 'POST', payload);
+
+            const response = await makeApiRequest('/GenerateAudioResponse', 'POST', payload);
+            console.log('Audio response:', response);
+            return response;
         } catch (error) {
             console.error("Error processing audio:", error);
             throw error;

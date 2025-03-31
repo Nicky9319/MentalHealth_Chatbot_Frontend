@@ -43,24 +43,29 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
       // Generate AI response using the passed in generateResponse function
       const response = await generateResponse(sessionId, userMessageText);
       
+      console.log("Received response:", response); // Debug log to check response format
+      
       if (response) {
-        if (response.messages) {
-          // New format: Find the AI's response (should be the last message with type='ai')
+        let aiMessageText = "";
+        
+        if (response.messages && Array.isArray(response.messages)) {
+          // Format: { messages: [{type: 'ai', content: '...'}] }
           const aiMessageObj = response.messages.find(msg => msg.type === 'ai');
-          
           if (aiMessageObj) {
-            const aiResponse = { 
-              text: aiMessageObj.content, 
-              isUser: false 
-            };
-            const newMessages = [...updatedMessages, aiResponse];
-            setMessages(newMessages);
-            onMessagesUpdate(newMessages);
+            aiMessageText = aiMessageObj.content;
           }
         } else if (response.response) {
-          // Fallback for old format where response is directly in response.response
+          // Format: { response: '...', session_id: '...' }
+          aiMessageText = response.response;
+        } else if (typeof response === 'string') {
+          // In case response is directly a string
+          aiMessageText = response;
+        }
+        
+        // Only proceed if we found a valid message text
+        if (aiMessageText) {
           const aiResponse = { 
-            text: response.response, 
+            text: aiMessageText, 
             isUser: false 
           };
           const newMessages = [...updatedMessages, aiResponse];
@@ -103,13 +108,29 @@ const ChatWindow = ({ sessionId, messages: initialMessages, onMessagesUpdate, ma
       // Call the processAudioFile function from props instead of making API call here
       const response = await processAudioFile(sessionId, audioFile);
       
-      if (response && response.messages) {
-        // Find the AI's response (should be the last message with type='ai')
-        const aiMessageObj = response.messages.find(msg => msg.type === 'ai');
+      console.log("Received audio response:", response); // Debug log
+      
+      if (response) {
+        let aiMessageText = "";
         
-        if (aiMessageObj) {
+        if (response.messages && Array.isArray(response.messages)) {
+          // Format: { messages: [{type: 'ai', content: '...'}] }
+          const aiMessageObj = response.messages.find(msg => msg.type === 'ai');
+          if (aiMessageObj) {
+            aiMessageText = aiMessageObj.content;
+          }
+        } else if (response.response) {
+          // Format: { response: '...', session_id: '...' }
+          aiMessageText = response.response;
+        } else if (typeof response === 'string') {
+          // In case response is directly a string
+          aiMessageText = response;
+        }
+        
+        // Only proceed if we found a valid message text
+        if (aiMessageText) {
           const aiResponse = { 
-            text: aiMessageObj.content, 
+            text: aiMessageText, 
             isUser: false 
           };
           const newMessages = [...updatedMessages, aiResponse];
